@@ -1,0 +1,31 @@
+version: 2
+seeds:
+  - name: product_prices
+    description: >
+      ILLUSTRATIVE prices, invented for the prototype. They are not Wingtra's
+      prices. In production this comes from the product price list in Odoo.
+      Names, renewal mode and term come from the app's products table.
+      storage_quota_gb is Wingtra's published quota (PRO 600 GB, UNLIMITED 4 TB);
+      Wingtra applies it per account, the prototype per drone.
+    columns:
+      - name: product
+        data_tests: [unique, not_null]
+
+  - name: renewal_price_policy
+    description: >
+      The renewal pricing policy, as DATA: what each churn-risk band gets at
+      renewal. It is a commercial decision that GTM owns, so it lives in a
+      table GTM can change, not in code. Values are illustrative (vendor
+      reports put typical SaaS renewal uplifts at 3-9 %).
+    config:
+      # numeric, no float: es dinero y se redondea.
+      column_types:
+        uplift_pct: numeric
+        max_save_discount_pct: numeric
+    columns:
+      - name: risk_band
+        data_tests:
+          - unique
+          - not_null
+          - accepted_values:
+              arguments: { values: ['low', 'medium', 'high', 'unknown'] }

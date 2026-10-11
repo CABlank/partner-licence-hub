@@ -1,0 +1,12 @@
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+analytics/.venv/
+analytics/target/
+analytics/logs/
+analytics/dbt_packages/
+.user.yml
+.env*.local
+.env
+.env.neon

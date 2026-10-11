@@ -1,0 +1,27 @@
+{
+  "name": "wingtra-licence-hub",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3005",
+    "build": "next build",
+    "start": "next start -p 3005",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "demo:reset": "docker compose exec -T db psql -q -U postgres -d licence_hub -v ON_ERROR_STOP=1 -f /db/reset.sql"
+  },
+  "dependencies": {
+    "next": "15.5.27",
+    "pg": "^8.13.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.7"
+  }
+}

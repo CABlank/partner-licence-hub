@@ -1,0 +1,5 @@
+risk_band,uplift_pct,max_save_discount_pct,next_action
+low,0.05,0,Renew at list + 5%
+medium,0.00,0,Renew at list; dealer checks in before quoting
+high,0.00,0.15,Dealer calls before quoting; a save discount up to 15% goes to the deal desk
+unknown,0.00,0,Renew at list; not enough usage history to judge

@@ -1,0 +1,68 @@
+version: 2
+
+models:
+  - name: stg_partners
+    columns:
+      - name: partner_id
+        data_tests: [unique, not_null]
+      - name: partner_kind
+        data_tests:
+          - accepted_values:
+              arguments: { values: ['distributor', 'dealer', 'referral'] }
+  - name: stg_products
+    columns:
+      - name: product
+        data_tests: [unique, not_null]
+      - name: renewal_mode
+        data_tests:
+          - accepted_values:
+              arguments: { values: ['manual', 'auto', 'perpetual'] }
+  - name: stg_licences
+    columns:
+      - name: licence_code
+        data_tests: [unique, not_null]
+      - name: dealer_id
+        data_tests:
+          - relationships:
+              arguments: { to: ref('stg_partners'), field: partner_id }
+      - name: product
+        data_tests:
+          - relationships:
+              arguments: { to: ref('stg_products'), field: product }
+  - name: stg_renewal_requests
+    columns:
+      - name: renewal_request_id
+        data_tests: [unique, not_null]
+      - name: licence_code
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: { to: ref('stg_licences'), field: licence_code }
+      - name: status
+        data_tests:
+          - accepted_values:
+              arguments: { values: ['pending', 'approved', 'rejected', 'ordered'] }
+      - name: expires_on_at_request
+        description: Expiry date this request renews, frozen when asked. Needed for lead-time metrics.
+        data_tests: [not_null]
+  - name: stg_transfer_requests
+    columns:
+      - name: transfer_request_id
+        data_tests: [unique, not_null]
+      - name: status
+        data_tests:
+          - accepted_values:
+              arguments: { values: ['pending', 'approved', 'rejected'] }
+  - name: stg_customers
+    columns:
+      - name: customer_id
+        data_tests: [unique, not_null]
+      - name: dealer_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: { to: ref('stg_partners'), field: partner_id }
+  - name: stg_drone_usage_monthly
+    columns:
+      - name: drone_serial
+        data_tests: [not_null]

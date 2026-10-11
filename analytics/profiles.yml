@@ -1,0 +1,26 @@
+# Conexión local. hub_analytics lee las tablas de la app (sin escribir en ellas)
+# y crea sus propios esquemas: analytics_staging, analytics_marts...
+licence_hub:
+  target: sim
+  outputs:
+    sim:
+      type: postgres
+      host: localhost
+      port: 5433
+      user: hub_analytics
+      password: hub_analytics
+      dbname: licence_hub_sim
+      schema: analytics
+      threads: 4
+    # La demo publicada (Neon). Las credenciales llegan por variables de
+    # entorno, nunca en este archivo: ver ../.env.neon (fuera de git).
+    neon:
+      type: postgres
+      host: "{{ env_var('NEON_HOST') }}"
+      port: 5432
+      user: hub_analytics
+      password: "{{ env_var('HUB_ANALYTICS_PW') }}"
+      dbname: licence_hub_sim
+      schema: analytics
+      sslmode: require
+      threads: 4

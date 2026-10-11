@@ -1,0 +1,11 @@
+# Postgres local para el prototipo. Arranca con: docker compose up -d
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: licence_hub
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./db:/db:ro

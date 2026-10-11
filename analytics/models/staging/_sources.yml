@@ -1,0 +1,23 @@
+version: 2
+
+sources:
+  - name: app
+    description: The Partner Licence Hub's own tables (schema public). Read-only for analytics.
+    schema: public
+    tables:
+      - name: products
+        description: Product catalogue, with renewal mechanics and transferability.
+      - name: tenants
+      - name: customers
+        description: End customers; dealer_id is the partner whose invitation code they used.
+      - name: licences
+      - name: renewal_requests
+      - name: transfer_requests
+
+  - name: telemetry
+    description: >
+      SIMULATED monthly usage per drone (analytics/simulate.sql). In production
+      it would come from Wingtra's cloud, a different system from the portal.
+    schema: telemetry
+    tables:
+      - name: drone_usage_monthly

@@ -1,0 +1,96 @@
+version: 2
+
+models:
+  - name: mart_renewal_rate_monthly
+    description: Share of licence terms that ended each closed month and were renewed, per distributor.
+    columns:
+      - name: renewal_rate
+        description: renewed / (renewed + lapsed). In-progress terms are excluded.
+
+  - name: mart_renewal_risk_90d
+    description: Licences expiring in the next 90 days and whether a renewal is already under way.
+    columns:
+      - name: licence_code
+        data_tests: [unique, not_null]
+      - name: value_chf
+        description: Illustrative price (seed product_prices), not real revenue.
+
+  - name: fct_transfers
+    description: One row per drone transfer request, with who decided it and how long it took.
+    columns:
+      - name: transfer_request_id
+        data_tests: [unique, not_null]
+      - name: decided_by_role
+        data_tests:
+          - accepted_values:
+              arguments: { values: ['pending', 'support', 'current_partner', 'distributor'] }
+
+  - name: mart_distributor_scorecard
+    description: One row per distributor, what Wingtra would review each quarter.
+    columns:
+      - name: distributor_id
+        data_tests: [unique, not_null]
+
+  - name: mart_arr_bridge_monthly
+    description: >
+      ARR bridge per month and distributor: starting + new + reactivated +
+      expansion - contraction - churned = ending. ARR = PRO and UNLIMITED at
+      illustrative list price, annualised; WingtraCARE and LIDAR excluded.
+    columns:
+      - name: month
+        data_tests: [not_null]
+      - name: distributor_id
+        data_tests: [not_null]
+
+  - name: mart_retention_12m
+    description: >
+      Trailing 12-month NRR and GRR per distributor and month, on the cohort of
+      customers that had ARR 12 months earlier. Sums are kept so the network
+      total can be computed without averaging ratios.
+    columns:
+      - name: grr
+        description: Never above 1. Only losses count.
+      - name: nrr
+        description: Can exceed 1 when expansion beats churn.
+
+  - name: mart_churn_signal_backtest
+    description: >
+      Lapse rate by churn-risk band, scoring each past term with the usage data
+      known 60 days before it expired. If 'high' does not lapse clearly more
+      than 'low', the band is not used.
+    columns:
+      - name: risk_band
+        data_tests:
+          - accepted_values:
+              arguments: { values: ['low', 'medium', 'high', 'unknown'] }
+
+  - name: mart_upsell_signal_backtest
+    description: >
+      Upgrade-to-UNLIMITED rate within 6 months for PRO drones near their
+      storage quota vs the rest.
+
+  - name: mart_renewal_desk
+    description: >
+      The renewal engine. One row per PRO/UNLIMITED subscription expiring in 90
+      days, with churn-risk band, recommended renewal price (policy seed
+      renewal_price_policy), upsell flag and next action.
+    columns:
+      - name: licence_code
+        data_tests: [unique, not_null]
+      - name: risk_band
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments: { values: ['low', 'medium', 'high', 'unknown'] }
+      - name: recommended_price_chf
+        data_tests: [not_null]
+
+  - name: mart_dealer_book
+    description: >
+      Each dealer's book: ARR of the customers that signed up with its
+      invitation code, 12-month NRR and GRR, ARR expiring and at high risk in
+      90 days, and upsell candidates. Base for paying partners on renewals and
+      upgrades, including in-app ones.
+    columns:
+      - name: dealer_id
+        data_tests: [unique, not_null]
