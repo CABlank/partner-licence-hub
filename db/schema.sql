@@ -40,7 +40,7 @@ CREATE TABLE drones (
 );
 
 -- El catálogo, como DATOS y no como código. Wingtra tiene cuatro mecánicas de
--- licencia distintas (ver entrevistas/wingtra-gtm-junior/negocio-a-fondo.md):
+-- licencia distintas (ver DECISIONS.md, punto 16):
 --   manual    -> suscripción que alguien tiene que renovar (WingtraPRO, UNLIMITED)
 --   auto      -> se renueva sola salvo baja; avisos a 90/60/30 días (WingtraCARE)
 --   perpetual -> funciona para siempre; lo que caduca son las actualizaciones (LIDAR)

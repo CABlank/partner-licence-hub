@@ -1,7 +1,7 @@
 # Partner Licence Hub (prototipo para Wingtra, por Carlos Blank)
 
 Prototipo independiente con datos inventados. No usa ni toca sistemas de Wingtra.
-Diseño: `../../entrevistas/wingtra-gtm-junior/figma-board.md`. Decisiones: `DECISIONS.md`.
+Decisiones de diseño y sus alternativas: `DECISIONS.md`.
 
 ## Arrancar y probar (Git Bash)
 ```bash
