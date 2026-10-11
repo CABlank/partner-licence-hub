@@ -1,239 +1,252 @@
-# Decisiones (y por qué)
+# Decisions (and why)
 
-Cada decisión con su alternativa descartada. Esto es lo que se explica en el
-vídeo y en la entrevista: no "qué hice", sino "por qué encaja mejor".
+Each decision comes with the alternative I rejected. The point is not only what
+I built, but why it fits better.
 
-## 1. Wingtra no es un tenant, es un tipo de sesión
-- **Alternativa descartada:** Wingtra como raíz del árbol (padre de los distribuidores).
-- **Por qué:** la regla "un padre ve a sus hijos" haría que Wingtra viera todo
-  por herencia, sin que nadie lo decidiera. Si mañana la regla pasa a ser
-  recursiva, la lógica cambia sin querer. Con `is_platform()` el acceso total es
-  explícito y se puede buscar en el código.
+## 1. The manufacturer is not a tenant, it is a session type
+- **Rejected:** the manufacturer as the root of the partner tree (parent of
+  every distributor).
+- **Why:** the rule "a parent sees its children" would give it full access by
+  inheritance, without anyone deciding it. If that rule ever became recursive,
+  access would change by accident. With `is_platform()`, full access is
+  explicit and easy to search for.
 
-## 2. El cliente final y el referral partner fuera del árbol
-- **Por qué:** en el Figma están en la misma imagen, pero no son partners del
-  canal. El cliente ve por `customer_id`; el referral ve otra tabla (`leads`) y
-  nunca `licences`. Así "0 de 5" no depende de que nadie se acuerde de filtrar.
+## 2. End customers and referral partners are outside the partner tree
+- **Why:** they appear on the same diagram, but they are not channel partners.
+  The customer sees by `customer_id`. The referral partner reads a different
+  table (`leads`) and never `licences`. So "sees 0 of 7" does not depend on
+  anyone remembering to filter.
 
-## 3. El aislamiento vive en la base de datos (RLS), no en la app
-- **Alternativa descartada:** `WHERE tenant_id = ...` en cada consulta.
-- **Por qué:** basta con olvidar un WHERE en un endpoint para filtrar datos de
-  un partner a otro. Con RLS la consulta no lleva filtro y la base decide.
-  Además, un `tenant_id = X` a mano rompería la vista del distribuidor, que no
-  tiene licencias propias.
-- **Coste aceptado:** la app debe declarar la sesión en cada transacción
-  (`set_config(..., true)`); si no lo hace, recibe cero filas (fail-closed).
-- **Límite honesto:** la base no puede saber si la app miente sobre quién es.
-  Las variables de sesión las pone el servidor a partir del login, nunca el
-  navegador.
+## 3. Isolation lives in the database (RLS), not in the app
+- **Rejected:** `WHERE tenant_id = ...` in every query.
+- **Why:** one forgotten WHERE in one endpoint leaks a partner's customers to a
+  competitor. With RLS the query has no filter and the database decides. A
+  hand-written `tenant_id = X` would also break the distributor's view, since a
+  distributor has no licences of its own.
+- **Accepted cost:** the app must declare the session in every transaction
+  (`set_config(..., true)`). If it does not, it gets zero rows (fail-closed).
+- **Honest limit:** the database cannot know whether the app lies about who is
+  asking. The session variables are set by the server from the login, never by
+  the browser.
 
-## 4. La tabla del Figma es el test
-- `db/test_who_sees_what.sql` comprueba fila por fila la tabla "Ve / No ve",
-  ejecutándose como `hub_app` (un rol sin privilegios). Como superusuario el
-  test pasaría por la razón equivocada: RLS no se aplica.
+## 4. The "who sees what" table is the test
+- `db/test_who_sees_what.sql` checks the design's "sees / does not see" table
+  row by row, running as `hub_app`, an unprivileged role. As a superuser the
+  test would pass for the wrong reason, because RLS does not apply.
 
-## 5. IDs legibles (`dealer-valencia`) en vez de UUID
-- **Por qué:** es un prototipo para enseñar; en la demo y en el test se lee
-  quién es quién. En producción serían UUID.
+## 5. Readable IDs (`dealer-valencia`) instead of UUIDs
+- **Why:** it is a prototype meant to be read; in the demo and in the tests
+  you can see who is who. In production they would be UUIDs.
 
-## 6. El panel de caducidades es una vista con `security_invoker`
-- **Encontrado probando, no leyendo:** una vista normal se ejecuta con los
-  permisos de su dueño (postgres) y se salta RLS. Dealer Valencia vio 5 de 5.
-  Con `security_invoker = true`, la vista aplica las reglas de quien consulta.
-- **Segundo fallo encontrado:** el cliente final no puede leer `tenants`, así
-  que un `JOIN` normal hacía desaparecer su licencia. Pasa a `LEFT JOIN`.
-- **Quién actúa:** el dealer a 90 días (es la primera línea); el distribuidor
-  se suma a 30 días. Es una propuesta para validar con Wingtra, no un dato.
+## 6. The expiry panel is a view with `security_invoker`
+- **Found by testing, not by reading:** a normal view runs with its owner's
+  permissions and skips RLS. Dealer Valencia saw 5 of 5 licences. With
+  `security_invoker = true` the view applies the rules of whoever queries it.
+- **Second bug found:** the end customer cannot read `tenants`, so a plain
+  `JOIN` made its licence disappear. Changed to `LEFT JOIN`.
+- **Who acts:** the dealer from 90 days (it is the front line); the
+  distributor joins at 30 days. This is a proposal to validate with the
+  business, not a fact.
 
-## 7. Un test que no puede fallar no prueba nada
-- El primer test del panel dio "OK" con un resultado vacío: `NULL <> array` es
-  NULL, no TRUE, y el `IF` no saltaba. Todas las comparaciones usan ahora
+## 7. A test that cannot fail proves nothing
+- The first panel test said "OK" on an empty result: `NULL <> array` is NULL,
+  not TRUE, so the `IF` never fired. Every comparison now uses
   `IS DISTINCT FROM`.
-- Comprobado al revés: lanzado como superusuario (sin RLS), el test falla en
-  Iberia Distribution (ve WR-2210 de Nordic). Así se sabe que tiene dientes.
+- Checked the other way round: run as a superuser (no RLS), the test fails on
+  Iberia Distribution (it sees Nordic's WR-2210). That is how I know the test
+  has teeth.
 
-## 8. TypeScript estricto, sin `any`, y zod en las fronteras
-- `pg` devuelve las filas como `any`. Un cast (`rows as ExpiryRow[]`) sería
-  mentirle al compilador. `queryRows` valida cada fila con un esquema zod y el
-  tipo sale de ese esquema (`z.infer`): un solo sitio donde se define la forma.
-- El id del actor llega de una cookie o un formulario, o sea de fuera: zod lo
-  valida contra la lista; un valor inventado cae en el actor por defecto.
-- Test con dientes: cambiando `SET LOCAL` por `SET` en `withSession`, el test
-  "a pooled connection does not inherit the previous actor" falla.
+## 8. Strict TypeScript, no `any`, zod at the boundaries
+- `pg` returns rows as `any`. A cast (`rows as ExpiryRow[]`) would lie to the
+  compiler. `queryRows` validates every row with a zod schema, and the type
+  comes from that schema (`z.infer`), so the shape is defined in one place.
+- The actor id comes from a cookie or a form, so from outside. zod checks it
+  against the list; an invented value falls back to the default actor.
+- Test with teeth: changing `SET LOCAL` to `SET` in `withSession` makes the
+  test "a pooled connection does not inherit the previous actor" fail.
 
-## 9. La renovación pasa por el distribuidor (no se lo salta)
-- **Por qué:** en el Figma (sección 1) el dinero sube por la jerarquía: el
-  distribuidor es quien compra a Wingtra. Si el dealer pidiera directo a
-  Wingtra, el pedido de Odoo saldría con el cliente de facturación equivocado.
-  Por eso el pedido en Odoo va a nombre del distribuidor.
-- **La base lo impone:** el dealer solo puede crear solicitudes dirigidas a SU
-  distribuidor y para licencias SUYAS. Comprobado rompiendo la política: falla
-  el test "cannot forge a request".
-- **Pregunta abierta para Wingtra:** ¿algunos distribuidores dejan que sus
-  dealers renueven sin aprobación (auto-approve por debajo de X)? Sería una
-  opción por distribuidor, no un cambio de modelo.
+## 9. Renewals go through the distributor
+- **Why:** money flows up the hierarchy, and the distributor is the one that
+  buys from the manufacturer. If the dealer ordered directly, the ERP order
+  would carry the wrong billing customer. So the order is created in the
+  distributor's name.
+- **The database enforces it:** a dealer can only create requests addressed to
+  ITS distributor and for ITS licences. Checked by breaking the policy: the
+  test "cannot forge a request" fails.
+- **Open question for the business:** do some distributors let their dealers
+  renew without approval (auto-approve below an amount)? That would be a
+  setting per distributor, not a change of model.
 
-## 10. Outbox entre "aprobado" y Odoo
-- **Alternativa descartada:** llamar a Odoo dentro de la acción de aprobar.
-- **Por qué:** son dos sistemas. Si Odoo falla después de aprobar, quedan en
-  desacuerdo y nadie se entera. Con el outbox el evento se guarda en la misma
-  transacción que la aprobación, y un dispatcher lo entrega con reintentos.
-- **Coste aceptado:** entrega "al menos una vez". Odoo recibe `event_id` como
-  referencia y no duplica pedidos. Probado: Odoo caído (el evento espera y
-  registra el error) y caída a mitad (el pedido ya existía: no se duplica y la
-  licencia se extiende una sola vez).
-- **Simplificación consciente:** la licencia se extiende al crear el pedido. En
-  la realidad seguramente sería al cobrar la factura. Pregunta para Wingtra.
+## 10. An outbox between "approved" and the ERP
+- **Rejected:** calling the ERP inside the approve action.
+- **Why:** they are two systems. If the ERP fails after the approval, they
+  disagree and nobody notices. With the outbox, the event is stored in the same
+  transaction as the approval, and a dispatcher delivers it with retries.
+- **Accepted cost:** at-least-once delivery. The ERP receives `event_id` as the
+  order reference, so it never creates a duplicate order. Tested with the ERP
+  down (the event waits and records the error) and with a crash halfway (the
+  order already existed: no duplicate, and the licence is extended once).
+- **Conscious simplification:** the licence is extended when the order is
+  created. In reality it is probably when the invoice is paid. Question for
+  the business.
 
-## 11. Un doble clic no crea dos pedidos
-- Índice único parcial: una sola solicitud abierta por licencia. Lo garantiza
-  la base, no el botón. Test con dos peticiones simultáneas.
-- Permisos por columna: el distribuidor puede cambiar el estado, pero no a qué
-  licencia apunta la solicitud. 'ordered' solo lo pone el dispatcher.
+## 11. A double click does not create two orders
+- A partial unique index allows one open request per licence. The database
+  guarantees it, not the button. Tested with two simultaneous requests.
+- Column permissions: the distributor can change the status, but not which
+  licence the request points to. Only the dispatcher sets `ordered`.
 
-## 12. Transferencia de dron: decide quien tiene la información, no soporte
-- **Hoy (Figma, sección 2):** Drone ID de otro partner -> bloqueado -> email a
-  soporte -> una persona decide a mano.
-- **Propuesta:** el dealer pide la transferencia con un motivo. Decide el
-  partner que tiene el dron o su distribuidor, que son quienes saben si el
-  cliente se ha cambiado de verdad. Soporte solo entra si nadie contesta en 5
-  días. Todo queda en `drone_events`, el historial que hoy vive en un email.
-- **Privacidad:** comprobar un Drone ID responde solo "libre / tuyo / de otro
-  partner", nunca de quién ni de qué cliente.
-- **Una sola puerta para decidir:** `decide_transfer()` (SECURITY DEFINER),
-  porque mueve filas que quien decide no puede tocar. Por eso toda la
-  autorización está escrita ahí dentro y cubierta por tests. Los partners no
-  tienen permiso de UPDATE sobre la tabla.
-- **Regla de negocio:** no se transfiere un dron con una renovación abierta;
-  quedaría facturada al dealer anterior.
-- **Preguntas abiertas para Wingtra:** ¿las licencias activas viajan siempre
-  con el dron? ¿5 días es razonable? ¿el solicitante debería ver quién es el
-  dueño actual?
+## 12. Drone transfers: whoever has the information decides, not support
+- **Today:** a dealer enters a Drone ID configured by another partner →
+  blocked → email to support → a person decides by hand.
+- **Proposal:** the dealer requests the transfer with a reason. The partner
+  that has the drone, or its distributor, decides, because they know whether
+  the customer really moved. Support only steps in if nobody answers in 5 days.
+  Everything is recorded in `drone_events`, the history that today lives in an
+  email thread.
+- **Privacy:** checking a Drone ID only answers "free / yours / another
+  partner's", never whose, and never which customer.
+- **One door to decide:** `decide_transfer()` (SECURITY DEFINER), because it
+  moves rows the decider cannot touch. That is why all the authorisation is
+  written inside it and covered by tests. Partners have no UPDATE permission on
+  the table.
+- **Business rule:** a drone with an open renewal cannot be transferred; the
+  renewal would be billed to the previous dealer.
+- **Open questions for the business:** do active licences always travel with
+  the drone? Are 5 days reasonable? Should the requester see who the current
+  owner is?
 
-## 13. El fallo más importante del proyecto: un permiso que fallaba abierto
-- El test "Wingtra support cannot jump in before the 5 days are up" falló:
-  soporte SÍ podía decidir antes de tiempo.
-- **Causa:** Wingtra no tiene tenant, así que `from_tenant_id =
-  current_tenant()` da NULL; `NOT (NULL)` es NULL; y un `IF NULL` no entra, así
-  que no se lanzaba el error. La misma trampa del NULL del punto 7, pero esta
-  vez en una comprobación de permisos.
-- **Arreglo:** cada comparación envuelta en `coalesce(..., false)`.
-- **Lección:** en SQL, "deny if NOT allowed" es peligroso cuando "allowed"
-  puede ser NULL. Calcular `allowed` como booleano estricto y probar cada actor
-  que NO debe poder, no solo el que sí.
+## 13. The most important bug: a permission check that failed open
+- The test "support cannot jump in before the 5 days are up" failed: support
+  COULD decide early.
+- **Cause:** the manufacturer has no tenant, so `from_tenant_id =
+  current_tenant()` is NULL; `NOT (NULL)` is NULL; and `IF NULL` does not
+  enter, so the error was never raised. The same NULL trap as point 7, this
+  time in a permission check.
+- **Fix:** every comparison wrapped in `coalesce(..., false)`.
+- **Lesson:** in SQL, "deny if NOT allowed" is dangerous when "allowed" can be
+  NULL. Compute `allowed` as a strict boolean, and test every actor that must
+  NOT be able to, not only the one that can.
 
-## 14. La capa de análisis encontró un hueco en el modelo de datos
-- Para medir con cuánta antelación se pide una renovación hace falta saber qué
-  caducidad renovaba cada solicitud. La app no lo guardaba: al renovar,
-  `licences.expires_on` cambia y el dato se pierde para siempre.
-- **Arreglo:** `renewal_requests.expires_on_at_request`, congelada al pedir. La
-  política de INSERT exige que sea la fecha real; si no, un dealer podría
-  maquillar su antelación en los informes. Hay un test para ello.
-- **Lección:** pensar en cómo se medirá una función cambia cómo se guarda. Es
-  más barato decidirlo antes de tener datos que reconstruirlo después.
+## 14. The analytics layer found a gap in the data model
+- Measuring how early a renewal is requested needs the expiry date each
+  request was renewing. The app did not store it: on renewal,
+  `licences.expires_on` changes and the value is lost forever.
+- **Fix:** `renewal_requests.expires_on_at_request`, frozen at request time.
+  The INSERT policy requires it to be the real date; otherwise a dealer could
+  polish its lead time in the reports. There is a test for it.
+- **Lesson:** thinking about how a feature will be measured changes how its
+  data is stored. It is cheaper to decide before there is data than to
+  reconstruct it later.
 
-## 15. Análisis separado de la app, con datos simulados y dicho en voz alta
-- Otra base (`licence_hub_sim`) y otro usuario (`hub_analytics`): lee todas las
-  filas porque agrega la red entera, pero no puede escribir en las tablas de la
-  app. Es el papel de un data warehouse.
-- **Por qué simulados:** 5 licencias no se pueden medir. La simulación tiene
-  supuestos explícitos (Nordic renueva menos y aprueba más lento) y la página
-  lo dice: "Simulated data, not Wingtra's". Los precios son ilustrativos.
-- **Panel dentro de la app, no Metabase:** se publica con el prototipo y solo
-  lo ve Wingtra. Metabase sería lo natural con un equipo de datos detrás.
-- **Honestidad en los gráficos:** el primer eje empezaba en 40 % y pegaba al
-  suelo los meses malos de Nordic (bajaron al 33 %). Ahora va de 0 a 100 %. Y
-  el rango "licencias por punto" se calcula a partir de los datos: el texto
-  fijo que escribí primero (3 a 15) era falso (es de 1 a 16).
+## 15. Analytics separated from the app, on simulated data, and saying so
+- A different database (`licence_hub_sim`) and user (`hub_analytics`). It reads
+  every row because it aggregates the whole network, but it cannot write to
+  the app's tables. That is the role of a data warehouse.
+- **Why simulated:** 7 licences cannot be measured. The simulation has
+  explicit assumptions (Nordic renews less and approves more slowly), and the
+  page says "Simulated data". Prices are illustrative.
+- **Panel inside the app, not Metabase:** it ships with the prototype and only
+  the manufacturer sees it. With a data team behind it, Metabase would be the
+  natural choice.
+- **Honest charts:** the first axis started at 40% and hid Nordic's bad months
+  (down to 33%) at the bottom. It now runs from 0 to 100%. The "licences per
+  point" range is computed from the data: the fixed text I wrote first
+  ("3 to 15") was wrong.
 
-## 16. El catálogo es una tabla: cuatro mecánicas de licencia, no una
-- **Antes:** un solo tipo de licencia (suscripción, se renueva a mano, viaja
-  con el dron) y nombres antiguos ("CLOUD Pro") escritos en el código.
-- **Lo que encontré investigando** (`entrevistas/wingtra-gtm-junior/negocio-a-fondo.md`):
-  Wingtra renombró sus planes (ESSENTIAL / PRO / UNLIMITED); LIDAR es perpetua
-  con 3 años de actualizaciones; WingtraCARE se renueva sola con avisos a
-  90/60/30 días y **no se transfiere** si se revende el dron.
-- **Ahora:** tabla `products` con `renewal_mode` (manual / auto / perpetual),
-  `term_years`, `anchor` y `transferable`. De ahí sale todo:
-  - el panel: "Request renewal" solo en productos manuales; CARE dice "se
-    renueva sola, baja posible hasta el X"; LIDAR, "sigue funcionando, terminan
-    las actualizaciones";
-  - la base: la política de INSERT rechaza renovar CARE o LIDAR (sería un
-    pedido duplicado en Odoo). La app además da un mensaje claro antes;
-  - el dispatcher: la duración de la renovación sale de `term_years`;
-  - la transferencia: lo transferible pasa al nuevo dealer; CARE termina
-    (`ended_at`) y queda en el historial. Quien decide lo ve ANTES de aprobar
-    ("Moves" / "Ends"); el solicitante no ve las licencias ajenas;
-  - el análisis: la tasa de renovación cuenta solo productos manuales. Que CARE
-    se renueve sola no es mérito del portal.
-- **Supuestos marcados:** el anclaje y la transferibilidad de PRO y UNLIMITED
-  no son públicos. Son preguntas para Wingtra, no hechos.
-- **Las cifras simuladas cambiaron** al regenerar con el catálogo nuevo (otra
-  secuencia aleatoria): Nordic pasó de 59 % a 76 % de renovación. Con 5 a 15
-  licencias por mes y distribuidor, esa diferencia era sobre todo ruido; la de
-  tiempo de aprobación (46 h frente a 14 h de Iberia) se mantiene. **Lección:**
-  no contar como hallazgo una diferencia que una nueva muestra borra.
+## 16. The catalogue is a table: four licence mechanics, not one
+- **Before:** one licence type (subscription, renewed by hand, travels with
+  the drone) and old plan names hard-coded.
+- **What public information showed:** the software plans are ESSENTIAL / PRO /
+  UNLIMITED; LIDAR is perpetual with 3 years of updates; the care plan renews
+  automatically with notices at 90/60/30 days and is **not transferable** when
+  the drone is resold.
+- **Now:** a `products` table with `renewal_mode` (manual / auto / perpetual),
+  `term_years`, `anchor` and `transferable`. Everything follows from it:
+  - **the panel:** "Request renewal" only on manual products. CARE says
+    "auto-renews, opt-out by X"; LIDAR says "keeps working, updates end";
+  - **the database:** the INSERT policy rejects renewing CARE or LIDAR (it
+    would be a duplicate ERP order). The app also gives a clear message first;
+  - **the dispatcher:** the renewal length comes from `term_years`;
+  - **the transfer:** transferable licences move to the new dealer; CARE ends
+    (`ended_at`) and stays in the history. The decider sees "Moves" / "Ends"
+    BEFORE approving; the requester never sees another partner's licences;
+  - **the analytics:** the renewal rate counts manual products only. CARE
+    renewing itself is not the portal's merit.
+- **Marked assumptions:** the anchor and transferability of PRO and UNLIMITED
+  are not public. They are questions for the business, not facts.
+- **The simulated figures changed** when regenerated with the new catalogue
+  (a different random sequence). Nordic went from 59% to 76% renewal. With 5
+  to 15 licences per month and distributor, that gap was mostly noise; the gap
+  in approval time persisted. **Lesson:** do not report as a finding a
+  difference that a new sample erases.
 
-## 17. Revisión de código completa (09.10): tres agujeros de permisos
-Revisé archivo por archivo buscando fallos, y comprobé cada sospecha con un
-ataque real como `hub_app` antes de darla por buena.
+## 17. Full code review: three permission holes
+I reviewed the code file by file looking for bugs, and confirmed every
+suspicion with a real attack as `hub_app` before accepting it.
 
-| # | Hallazgo | Gravedad | Arreglo | Test |
+| # | Finding | Severity | Fix | Test |
 |---|---|---|---|---|
-| 1 | **Un dealer podía escribir un evento "renovación aprobada" en el outbox.** El dispatcher creaba el pedido en Odoo a nombre del distribuidor y extendía la licencia un año, sin aprobación. Comprobado: pedido S00001, licencia hasta 2027-11-03 | Alta | La app ya no puede escribir en el outbox. El evento lo crea un trigger cuando una solicitud pasa de `pending` a `approved`, con datos de la base | `a dealer cannot write an "approved" event` |
-| 2 | **El dispatcher se fiaba del payload del evento** (licencia, distribuidor) | Alta (con el 1) | Lee la solicitud por su id y solo factura si está `approved`; si no, descarta el evento (`discarded_at`) sin reintentar | `the dispatcher discards an event whose request was never approved` |
-| 3 | **Un distribuidor podía pedir el dron de su propio dealer y aprobárselo él mismo** | Media | `decide_transfer()`: nadie decide su propia solicitud | `a distributor cannot approve its own request` |
-| 4 | **Un referral partner podía pedir un dron**; si se aprobaba, vería sus licencias | Media | La política exige ser dealer o distribuidor | `a referral partner cannot request a drone` |
-| 5 | `decideTransfer` convertía cualquier error (incluida una caída de la base) en "not found" y lo escondía | Baja | Solo traduce los rechazos conocidos; el resto se relanza | — |
-| 6 | Sin `DATABASE_URL`, el pool se conectaba en silencio a otra base | Baja | `lib/env.ts` valida las URLs con zod | — |
-| 7 | Insights daba un 500 si no existe la base de análisis; con datos vacíos diría "Infinity" | Baja | Mensaje claro y guarda contra la lista vacía | — |
-| 8 | Los contadores de urgencia contaban WingtraCARE (se renueva sola) y licencias ya caducadas | Baja (UX) | Solo cuentan productos manuales | — |
-| 9 | Textos desactualizados: "todas las licencias se mueven"; "Retrying · Odoo unavailable" ante cualquier error | Baja | Corregidos | — |
+| 1 | **A dealer could write a "renewal approved" event into the outbox.** The dispatcher created the ERP order in the distributor's name and extended the licence a year, with no approval. Confirmed: order S00001, licence extended to 2027-11-03 | High | The app can no longer write to the outbox. The event is created by a trigger when a request moves from `pending` to `approved`, with data from the database | `a dealer cannot write an "approved" event` |
+| 2 | **The dispatcher trusted the event payload** (licence, distributor) | High (with #1) | It reads the request by id and only bills it if it is `approved`; otherwise it discards the event (`discarded_at`) without retrying | `the dispatcher discards an event whose request was never approved` |
+| 3 | **A distributor could request its own dealer's drone and approve it itself** | Medium | `decide_transfer()`: nobody decides their own request | `a distributor cannot approve its own request` |
+| 4 | **A referral partner could request a drone**; if approved, it would see the drone's licences | Medium | The policy requires a dealer or distributor | `a referral partner cannot request a drone` |
+| 5 | `decideTransfer` turned any error (even a database outage) into "not found" and hid it | Low | It only translates known rejections; everything else is rethrown | — |
+| 6 | Without `DATABASE_URL`, the pool silently connected to a different database | Low | `lib/env.ts` validates the URLs with zod | — |
+| 7 | Insights returned a 500 if the analytics database did not exist; with empty data it would show "Infinity" | Low | A clear message, and a guard for the empty list | — |
+| 8 | The urgency counters included the care plan (auto-renews) and already expired licences | Low (UX) | They count manual products only | — |
+| 9 | Outdated texts: "all licences move"; "Retrying · Odoo unavailable" on any error | Low | Corrected | — |
 
-Los tests nuevos se comprobaron al revés: reabriendo los agujeros 1 y 4,
-fallan exactamente esos dos tests.
+The new tests were checked the other way round: reopening holes 1 and 4 makes
+exactly those two tests fail.
 
-**Lección:** los tests anteriores probaban lo que la app hace, no lo que un
-usuario con acceso directo a su propio rol podría hacer. Ahora hay tests de
-"intentos de saltarse la app" para cada escritura.
+**Lesson:** the earlier tests checked what the app does, not what a user with
+direct access to their own role could do. There are now "attempts to bypass the
+app" tests for every write.
 
-**Simplificaciones conocidas que siguen ahí** (no son fallos de la demo, pero
-en producción se harían distinto): LIDAR dice anclarse a la carga útil pero no
-hay tabla de cargas útiles; el cliente se guarda en el dron y en la licencia
-sin nada que obligue a que coincidan; "unidad de demo" se deduce de
-`customer_id IS NULL` en vez de ser una columna; un distribuidor no puede tener
-licencias propias renovables aunque en la realidad también vende directo.
+**Known simplifications that remain** (not bugs in the demo, but production
+would differ):
+- LIDAR says it is anchored to the payload, but there is no payloads table.
+- The customer is stored on both the drone and the licence, with nothing
+  forcing them to match.
+- "Demo unit" is inferred from `customer_id IS NULL` instead of being a column.
+- A distributor cannot hold renewable licences of its own, although in reality
+  distributors also sell directly.
 
-## 18. Ingreso recurrente: ARR, retención y un motor de renovaciones (11.10)
-- **Qué:** términos reconstruidos, ARR mensual por cliente, puente de ARR,
-  NRR/GRR, telemetría de uso simulada, banda de riesgo, precio de renovación
-  recomendado, backtests y cartera por dealer (`analytics/`, ver su README).
-- **ARR solo de PRO y UNLIMITED.** WingtraCARE se renueva sola y el portal no
-  guarda sus términos (en producción, de las facturas de Odoo); LIDAR es venta
-  perpetua.
-- **Gracia de 30 días en el ARR** (`arr_grace_days`).
-  - **Alternativa descartada:** sin gracia, cada renovación tardía sería una
-    baja seguida de un alta y el puente mentiría.
-  - **Coste:** quien no renueva cuenta 30 días de más. Por eso es una variable
-    visible.
-- **Reglas, no un modelo estadístico.**
-  - Con ~250 términos resueltos, un modelo se sobreajusta; una regla se le
-    explica a un dealer.
-  - La regla vive en una macro y la usan el panel y el backtest. Así, al
-    cambiarla se sabe si avisa mejor.
-- **Uso contra el año pasado**, como el ritmo de reservas de Malco: comparar
-  con los meses previos confunde el invierno nórdico con una baja.
-- **La política de precio es una tabla (seed), no código:** es una decisión
-  comercial de GTM. Una subida no necesita aprobación; un descuento sí.
-- **Encontrado mirando los resultados:** Nordic tenía la peor renovación y el
-  mejor NRR.
-  - **Causa:** la simulación repartía las licencias de un cliente al azar en 3
-    años, así que todo parecía ampliación.
-  - **Arreglo:** ahora la compra es por dron y UNLIMITED llega después. Por eso
-    cambian los números simulados anteriores.
+## 18. Recurring revenue: ARR, retention and a renewal desk
+- **What:** reconstructed licence terms, monthly ARR per customer, an ARR
+  bridge, NRR/GRR, simulated usage telemetry, a churn-risk band, a recommended
+  renewal price, backtests, and a book per dealer (see `analytics/README.md`).
+- **ARR counts PRO and UNLIMITED only.** The care plan renews itself and the
+  portal does not store its terms (in production they would come from ERP
+  invoices). LIDAR is a perpetual one-off sale.
+- **A 30-day grace period in ARR** (`arr_grace_days`).
+  - **Rejected:** no grace period. Every late renewal would show as churn
+    followed by new business, and the bridge would lie.
+  - **Cost:** a customer who does not renew counts for 30 extra days. That is
+    why it is a visible variable.
+- **Rules, not a statistical model.**
+  - With ~250 resolved terms, a model would overfit, and a rule can be
+    explained to a dealer.
+  - The rule lives in one macro, used by both the renewal desk and the
+    backtest. Changing it immediately shows whether it warns better.
+- **Usage against last year,** like booking pace vs last year in the car-rental
+  pricing engine I built before. Comparing with the previous months mistakes a
+  Nordic winter for churn.
+- **The pricing policy is a table (a seed), not code.** It is a commercial
+  decision that belongs to GTM. An uplift needs no approval; a discount does.
+- **Found by looking at the results:** Nordic had the worst renewal rate and
+  the best NRR.
+  - **Cause:** the simulation spread a customer's licences randomly over 3
+    years, so everything looked like expansion.
+  - **Fix:** purchases are now per drone, and UNLIMITED comes later as an
+    upgrade. The earlier simulated figures changed as a result.
+  - **Lesson:** an NRR that contradicts the renewal rate is an alarm, not a
+    finding.
 
-## Cómo usé IA
-Diseño (canal, bloqueo, preguntas, quién ve qué) hecho a mano en Figma. Con
-Claude como pareja de programación: revisar la política del Figma (encontró que
-solo cubría un nivel y que el cliente final no estaba en el árbol), escribir el
-esquema y el test. Cada decisión de este archivo la discutí y la puedo defender.
+## How I used AI
+The design (channel, blocking, open questions, who sees what) I did by hand in
+Figma. Claude was my pair programmer: it reviewed the design's access policy
+(it found the policy only covered one level and that the end customer was
+missing from the tree), and helped write the schema, the app, the tests and
+the analytics. I discussed every decision in this file and can defend it.
